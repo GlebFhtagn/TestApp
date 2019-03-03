@@ -109,6 +109,8 @@
             this.Controls.Add(this.button2);
             this.Controls.Add(this.button1);
             this.Controls.Add(this.nameCompBox);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.Fixed3D;
+            this.MinimizeBox = false;
             this.Name = "AddForm";
             this.Text = "Вложенный компонент";
             this.ResumeLayout(false);

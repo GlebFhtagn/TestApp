@@ -121,6 +121,8 @@
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(392, 343);
             this.Controls.Add(this.ComponentsTree);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.Fixed3D;
+            this.MaximizeBox = false;
             this.Name = "ComponentForm";
             this.Text = "База Компонентов";
             this.contextMenuStrip1.ResumeLayout(false);

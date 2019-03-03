@@ -50,5 +50,17 @@ namespace TestApp
         {
             return name;
         }
+
+        internal void recursionFound(string componentName)
+        {
+            nameTopCompBox.ForeColor = Color.Red;
+            label2.Text = "Рекурсия найдена";
+            this.name = componentName;
+        }
+
+        internal void changeStatus(string message)
+        {
+            this.label2.Text = message;
+        }
     }
 }

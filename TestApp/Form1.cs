@@ -17,17 +17,15 @@ namespace TestApp
         Word._Document document;
 
         Object templatePathObj = Application.StartupPath + "\\DataBase_Report.docx";
-
-        //Object templatePathObj = "C:\\Users\\User\\source\\repos\\TestApp\\DataBase_Report.docx";
-
-        public ComponentForm()
+        
+        private void fillComponentTree()
         {
-            InitializeComponent();
+            ComponentsTree.Nodes.Clear();
             using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
             {
                 connection.Open();
 
-                String command =    "SELECT ID, NAME "+
+                String command = "SELECT ID, NAME " +
                                     "FROM TOPCOMP ";
 
                 SqlCommand sc = new SqlCommand(command, connection);
@@ -47,6 +45,12 @@ namespace TestApp
 
                 connection.Close();
             }
+        }
+
+        public ComponentForm()
+        {
+            InitializeComponent();
+            fillComponentTree();
         }
 
         private void PopulateTopNode(int TID, TreeNode topNode)
@@ -112,35 +116,45 @@ namespace TestApp
             AddTopForm addTopForm = new AddTopForm("");
 
             WrongName:
-            if (addTopForm.ShowDialog(this) == DialogResult.OK)
+            try
             {
-                String componentName = addTopForm.GetComponent();
-
-                TreeNodeCollection rootNodes = ComponentsTree.Nodes;
-
-                bool containsFlag = false;
-                containsFlag = isContainsInDB(componentName);
-
-                if (!containsFlag)
+                if (addTopForm.ShowDialog(this) == DialogResult.OK)
                 {
-                    TreeNode topNode = new TreeNode(componentName);
-                    ComponentsTree.Nodes.Add(topNode);
-                    using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
+                    String componentName = addTopForm.GetComponent();
+
+                    TreeNodeCollection rootNodes = ComponentsTree.Nodes;
+
+                    bool containsFlag = false;
+                    containsFlag = isContainsInDB(componentName);
+
+                    if (!containsFlag)
                     {
-                        connection.Open();
-                        new SqlCommand("INSERT INTO TOPCOMP (NAME) VALUES ('" + addTopForm.GetComponent() + "')", connection).ExecuteNonQuery();
-                        connection.Close();
-                    }
+                        TreeNode topNode = new TreeNode(componentName);
+                        ComponentsTree.Nodes.Add(topNode);
+                        using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
+                        {
+                            connection.Open();
+                            new SqlCommand("INSERT INTO TOPCOMP (NAME) VALUES ('" + addTopForm.GetComponent() + "')", connection).ExecuteNonQuery();
+                            connection.Close();
+                        }
 
-                    addTopForm.Close();
-                }
-                else
-                {
-                    addTopForm.containAllert(componentName);
-                    addTopForm.Hide();
-                    goto WrongName; 
+                        addTopForm.Close();
+                    }
+                    else
+                    {
+                        addTopForm.containAllert(componentName);
+                        addTopForm.Hide();
+                        goto WrongName;
+                    }
                 }
             }
+            catch(Exception error)
+            {
+                addTopForm.changeStatus(error.Message);
+                addTopForm.Hide();
+                goto WrongName;
+            }
+
         }
 
         private void вложенныйКомпонентToolStripMenuItem_Click(object sender, EventArgs e)
@@ -152,8 +166,8 @@ namespace TestApp
                 try
                 {
                     TreeNode parentNode = ComponentsTree.SelectedNode;
-                    String parentName = returnNameOfTheNode(parentNode.Text);
-                    int parentQuantity = returnQuantityOfTheNode(parentNode.Text);
+                    String parentName = returnNameOfTheNode(parentNode);
+                    int parentQuantity = returnQuantityOfTheNode(parentNode);
                     String componentName = addForm.GetComponent();
                     int componentQuantity = addForm.GetQuantity();
 
@@ -174,7 +188,7 @@ namespace TestApp
 
                             if (parentNode.Parent == null)
                             {
-                                int parentId = getParentIdByName(parentName);
+                                int parentId = getNodeIdByName(parentName);
                                 int nodeId = getNodeIdByName(componentName);
 
                                 command = "SELECT * FROM TOP_IN_COMP WHERE TID = " + parentId + " AND ID = " + nodeId;
@@ -199,17 +213,30 @@ namespace TestApp
                             }
                             else
                             {
-                                int parentId = getParentIdByName(parentName);
+                                int parentId = getNodeIdByName(parentName);
                                 int nodeId = getNodeIdByName(componentName);
 
-                                command = "INSERT INTO IN_IN_COMP (PID, ID, QUANTITY) VALUES (" + parentId + ", " + nodeId + ", " + componentQuantity + ")";
+                                command = "SELECT * FROM IN_IN_COMP WHERE PID = " + parentId + " AND ID = " + nodeId;
+                                sqlCommand = new SqlCommand(command, connection);
                                 connection.Open();
-                                new SqlCommand(command, connection).ExecuteNonQuery();
-                                connection.Close();
+                                SqlDataReader reader = sqlCommand.ExecuteReader();
+                                bool relationExists = reader.HasRows;
+                                reader.Close();
+                                if (relationExists)
+                                {
+                                    addForm.containAllert(componentName, componentQuantity);
+                                    addForm.Hide();
+                                    goto WrongName;
+                                }
+                                else
+                                {
+                                    command = "INSERT INTO IN_IN_COMP (PID, ID, QUANTITY) VALUES (" + parentId + ", " + nodeId + ", " + componentQuantity + ")";
+                                    sqlCommand = new SqlCommand(command, connection);
+                                    sqlCommand.ExecuteNonQuery();
+                                }
                             }
                             connection.Close();
                         }
-                        parentNode.Nodes.Add(componentName + " (" + componentQuantity + ")");
                     }
                     else
                     {
@@ -218,9 +245,13 @@ namespace TestApp
                         goto WrongName;
                     }
                     addForm.Close();
-                }catch(Exception error)
+                    fillComponentTree();
+                }
+                catch(Exception error)
                 {
                     addForm.changeStatus(error.Message);
+                    addForm.Hide();
+                    goto WrongName;
                 }
             }
         }
@@ -229,63 +260,137 @@ namespace TestApp
         {
             TreeNode node = ComponentsTree.SelectedNode;
             TreeNode parentNode = node.Parent;
+            int nodeId, nodeQuantity, parentId, parentQuantity;
+            String nodeName, parentName;
+
             if (parentNode == null)
             {
-                WrongName1:
+                nodeId = getNodeId(node);
                 AddTopForm addTopForm = new AddTopForm(node.Text);
-                if (addTopForm.ShowDialog(this) == DialogResult.OK)
+                WrongName1:
+                try
                 {
-                    String componentName = addTopForm.GetComponent();
-                    if(checkForRecursion(node.Parent, componentName) && findNodeByName(node.Nodes, componentName).Length != 0)
-                        using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
+                    if (addTopForm.ShowDialog(this) == DialogResult.OK)
+                    {
+                        String componentName = addTopForm.GetComponent();
+                        if (checkForRecursion(parentNode, componentName) && findNodeByName(node.Nodes, componentName).Length == 0)
+                            using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
+                            {
+                                connection.Open();
+                                String command = "UPDATE TOPCOMP SET NAME = '" + componentName + "' WHERE NAME = '" + node.Text + "'";
+                                SqlCommand sc = new SqlCommand(command, connection);
+                                sc.ExecuteNonQuery();
+                                node.Text = componentName;
+                            }
+                        else
                         {
-                            connection.Open();
-                            String command = "UPDATE TOPCOMP SET NAME = '" + componentName + "' WHERE NAME = '" + node.Text + "'";
-                            SqlCommand sc = new SqlCommand(command, connection);
-                            sc.ExecuteNonQuery();
-                            node.Text = componentName;
+                            addTopForm.recursionFound(componentName);
+                            addTopForm.Hide();
+                            goto WrongName1;
                         }
+                    }
+                }
+                catch (Exception error)
+                {
+                    addTopForm.changeStatus(error.Message);
+                    addTopForm.Hide();
+                    goto WrongName1;
                 }
             }
             else
             {
-                String nodeName = returnNameOfTheNode(node.Text);
-                int nodeQuantity = returnQuantityOfTheNode(node.Text);
+                nodeId = getNodeId(node);
+                nodeName = returnNameOfTheNode(node);
+                nodeQuantity = returnQuantityOfTheNode(node);
+                parentId = getParentId(node);
+                parentName = returnNameOfTheNode(parentNode);
+                parentQuantity = returnQuantityOfTheNode(parentNode);
+
                 AddForm addForm = new AddForm(nodeName, nodeQuantity);
                 WrongName2:
                 if (addForm.ShowDialog(this) == DialogResult.OK)
                 {
-                    String componentName = addForm.GetComponent();
-                    int componentQuantity = addForm.GetQuantity();
-                    if (checkForRecursion(node.Parent, componentName) && findNodeByName(node.Nodes, componentName).Length != 0)
-                        using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
-                        {
-                            connection.Open();
-                            String command = "SELECT ID, PID FROM INCOMP INNER JOIN IN_IN_COMP ON INCOMP.ID = IN_IN_COMP.ID WHERE NAME = '" + nodeName + "'";
-                            SqlCommand sc = new SqlCommand(command, connection);
-                            SqlDataReader reader = sc.ExecuteReader();
-                            reader.Read();
-                            int id = (int) reader.GetValue(0);
-                            reader.Close();
-
-                            command = "UPDATE INCOMP SET NAME = '" + componentName + "' WHERE ID = " + id;
-                            sc = new SqlCommand(command, connection);
-                            sc.ExecuteNonQuery();
-
-                            command = "UPDATE TOP_IN_COMP SET QUANTITY = " + componentQuantity + " WHERE ID = " + id + " AND QUANTITY = " + nodeQuantity;
-                            sc = new SqlCommand(command, connection);
-                            sc.ExecuteNonQuery();
-
-                            node.Text = componentName+" ("+ componentQuantity+")";
-                        }
-
-                    else
+                    try
                     {
-                        addForm.recursionFound(componentName, componentQuantity);
+                        String componentName = addForm.GetComponent();
+                        int componentQuantity = addForm.GetQuantity();
+                        if (checkForRecursion(node.Parent, componentName) && findNodeByName(node.Nodes, componentName).Length == 0)
+                        {
+                            using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
+                            {
+                                connection.Open();
+                                int id = getNodeId(node);
+
+                                if (!isContainsInDB(componentName))
+                                {
+                                    String command = "UPDATE INCOMP SET NAME = '" + componentName + "' WHERE ID = " + id;
+                                    SqlCommand sc = new SqlCommand(command, connection);
+                                    sc.ExecuteNonQuery();
+
+                                    command = "UPDATE IN_IN_COMP SET QUANTITY = " + componentQuantity + " WHERE ID = " + id + " AND PID = " + parentId;
+                                    sc = new SqlCommand(command, connection);
+                                    sc.ExecuteNonQuery();
+                                }
+                                else
+                                {
+                                    if (parentNode.Parent == null)
+                                    {
+                                        int newId = getNodeIdByName(componentName);
+                                        String command = "DELETE TOP_IN_COMP WHERE ID = " + id + " AND TID = " + parentId;
+                                        SqlCommand sc = new SqlCommand(command, connection);
+                                        sc.ExecuteNonQuery();
+
+                                        command = "INSERT INTO TOP_IN_COMP (TID, ID, QUANTITY) VALUES (" + parentId + ", " + newId + ", " + componentQuantity + ")";
+                                        sc = new SqlCommand(command, connection);
+                                        sc.ExecuteNonQuery();
+                                    }
+                                    else
+                                    {
+                                        int newId = getNodeIdByName(componentName);
+                                        String command = "DELETE IN_IN_COMP WHERE ID = " + id + " AND PID = " + parentId;
+                                        SqlCommand sc = new SqlCommand(command, connection);
+                                        sc.ExecuteNonQuery();
+
+                                        command = "INSERT INTO IN_IN_COMP (PID, ID, QUANTITY) VALUES (" + parentId + ", " + newId + ", " + componentQuantity + ")";
+                                        sc = new SqlCommand(command, connection);
+                                        sc.ExecuteNonQuery();
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            addForm.recursionFound(componentName, componentQuantity);
+                            addForm.Hide();
+                            goto WrongName2;
+                        }
+                    }
+                    catch(Exception error)
+                    {
+                        addForm.changeStatus(error.Message);
                         addForm.Hide();
                         goto WrongName2;
                     }
                 }
+            }
+            fillComponentTree();
+        }
+
+
+        private void deleteAllRelations(TreeNode node)
+        {
+            String componentName = returnNameOfTheNode(node);
+            int componentId = getNodeId(node);
+
+            String command = (node.Parent != null ? "DELETE FROM IN_IN_COMP WHERE PID = " + componentId : "DELETE FROM TOP_IN_COMP WHERE PID = " + componentId);
+            using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
+            {
+                SqlCommand sqlCommand = new SqlCommand(command, connection);
+                sqlCommand.ExecuteNonQuery();
+            }
+            foreach (TreeNode childNode in node.Nodes)
+            {
+                deleteAllRelations(childNode);
             }
         }
 
@@ -295,11 +400,11 @@ namespace TestApp
             TreeNode parentNode = node.Parent;
             if (node == null)
                 return;
-            if (node.Parent == null)
-            {   String command = "DELETE FROM TOPCOMP WHERE NAME = '" + node.Text + "'";
-
+            if (parentNode == null)
+            {
                 using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
                 {
+                    String command = "DELETE FROM TOPCOMP WHERE NAME = '" + node.Text + "'";
                     SqlCommand sc = new SqlCommand(command, connection);
                     connection.Open();
                     sc.ExecuteNonQuery();
@@ -313,47 +418,27 @@ namespace TestApp
                 {
                     connection.Open();
 
-                    String сomponentName = returnNameOfTheNode(node.Text);
-                    String command = "SELECT ID FROM INCOMP WHERE NAME = '" + сomponentName + "'";
-                    SqlCommand sqlCommand = new SqlCommand(command, connection);
-                    SqlDataReader reader = sqlCommand.ExecuteReader();
-                    reader.Read();
-                    int componentId = (int)reader.GetValue(0);
-                    reader.Close();
+                    String сomponentName = returnNameOfTheNode(node);
+                    int componentId = getNodeId(node);
 
-                    int parentId;
+                    String parentName = returnNameOfTheNode(parentNode);
+                    int parentId = getNodeId(parentNode);
                     if (parentNode.Parent != null)
                     {
-                        String parentName = returnNameOfTheNode(parentNode.Text);
-                        command = "SELECT ID FROM INCOMP WHERE NAME = '" + parentName + "'";
-                        sqlCommand = new SqlCommand(command, connection);
-                        reader = sqlCommand.ExecuteReader();
-                        reader.Read();
-                        parentId = (int)reader.GetValue(0);
-                        reader.Close();
-
-                        command = "DELETE FROM IN_IN_COMP WHERE PID = " + parentId + " AND ID = " + componentId;
-                        sqlCommand = new SqlCommand(command, connection);
-                        sqlCommand.ExecuteNonQuery();
+                        String command1 = "DELETE FROM IN_IN_COMP WHERE PID = " + parentId + " AND ID = " + componentId;
+                        SqlCommand sqlCommand1 = new SqlCommand(command1, connection);
+                        sqlCommand1.ExecuteNonQuery();
                     }
                     else
                     {
-                        String parentName = returnNameOfTheNode(parentNode.Text);
-                        command = "SELECT ID FROM TOPCOMP WHERE NAME = '" + parentName + "'";
-                        sqlCommand = new SqlCommand(command, connection);
-                        reader = sqlCommand.ExecuteReader();
-                        reader.Read();
-                        parentId = (int)reader.GetValue(0);
-                        reader.Close();
-
-                        command = "DELETE FROM TOP_IN_COMP WHERE TID = " + parentId + " AND ID = " + componentId;
-                        sqlCommand = new SqlCommand(command, connection);
-                        sqlCommand.ExecuteNonQuery();
+                        String command1 = "DELETE FROM TOP_IN_COMP WHERE TID = " + parentId + " AND ID = " + componentId;
+                        SqlCommand sqlCommand1 = new SqlCommand(command1, connection);
+                        sqlCommand1.ExecuteNonQuery();
                     }
                     
-                    command = "SELECT ID FROM TOP_IN_COMP WHERE ID = " + componentId;
-                    sqlCommand = new SqlCommand(command, connection);
-                    reader = sqlCommand.ExecuteReader();
+                    String command = "SELECT ID FROM TOP_IN_COMP WHERE ID = " + componentId;
+                    SqlCommand sqlCommand = new SqlCommand(command, connection);
+                    SqlDataReader reader = sqlCommand.ExecuteReader();
                     bool leftInTopRelations = reader.HasRows;
                     reader.Close();
 
@@ -397,8 +482,8 @@ namespace TestApp
                 {
                     connection.Open();
                     String command = (selectedNode.Parent == null ?
-                                    "SELECT COUNT(*) FROM TOPCOMP INNER JOIN TOP_IN_COMP on NAME = '" + selectedNode.Text + "' and TOPCOMP.ID =  TOP_IN_COMP.TID" :
-                                    "SELECT COUNT(*) FROM INCOMP INNER JOIN IN_IN_COMP ON NAME = '" +returnNameOfTheNode(selectedNode.Text) + "' and INCOMP.ID =  IN_IN_COMP.PID");
+                                    "SELECT COUNT(*) FROM TOPCOMP INNER JOIN TOP_IN_COMP on NAME = '" + returnNameOfTheNode(selectedNode) + "' and TOPCOMP.ID =  TOP_IN_COMP.TID" :
+                                    "SELECT COUNT(*) FROM INCOMP INNER JOIN IN_IN_COMP ON NAME = '" +returnNameOfTheNode(selectedNode) + "' and INCOMP.ID =  IN_IN_COMP.PID");
                     SqlCommand sqlCommand = new SqlCommand(command, connection);
                     SqlDataReader reader = sqlCommand.ExecuteReader();
                     reader.Read();
@@ -407,8 +492,6 @@ namespace TestApp
                     
                     try
                     {
-                        //document = application.Documents.Add(ref templatePathObj, ref missingObj, ref missingObj, ref missingObj
-                        //File.Create(templatePathObj.ToString()).Close
                         application = new Word.Application();
                         document = application.Documents.Open(templatePathObj);
                     }
@@ -431,8 +514,8 @@ namespace TestApp
                     table.set_Style(style);
                     Word.Range wordcellrange;
                     command = (selectedNode.Parent == null ?
-                                   "SELECT INCOMP.NAME, QUANTITY FROM TOPCOMP INNER JOIN TOP_IN_COMP ON NAME = '" + selectedNode.Text + "' and TOPCOMP.ID =  TOP_IN_COMP.TID INNER JOIN INCOMP ON INCOMP.ID = TOP_IN_COMP.ID" :
-                                   "SELECT INCOMP.NAME, QUANTITY FROM INCOMP INNER JOIN IN_IN_COMP ON NAME = '" + returnNameOfTheNode(selectedNode.Text) + "' and INCOMP.ID =  IN_IN_COMP.PID");
+                                   "SELECT INCOMP.NAME, QUANTITY FROM TOPCOMP INNER JOIN TOP_IN_COMP ON NAME = '" + returnNameOfTheNode(selectedNode) + "' and TOPCOMP.ID =  TOP_IN_COMP.TID INNER JOIN INCOMP ON INCOMP.ID = TOP_IN_COMP.ID" :
+                                   "SELECT INCOMP.NAME, QUANTITY FROM INCOMP INNER JOIN IN_IN_COMP ON NAME = '" + returnNameOfTheNode(selectedNode) + "' and INCOMP.ID =  IN_IN_COMP.PID");
                     sqlCommand = new SqlCommand(command, connection);
                     reader = sqlCommand.ExecuteReader();
 
@@ -468,7 +551,7 @@ namespace TestApp
         private bool checkForRecursion(TreeNode parentNode, String currNodeName)
         {
             if (parentNode != null)
-                if (returnNameOfTheNode(parentNode.Text) != currNodeName)
+                if (returnNameOfTheNode(parentNode) != currNodeName)
                     return checkForRecursion(parentNode.Parent, currNodeName);
                 else
                     return false;
@@ -501,16 +584,18 @@ namespace TestApp
             }
         }
 
-        private String returnNameOfTheNode(String nonRegEx)
+        private String returnNameOfTheNode(TreeNode node)
         {
+            String nonRegEx = node.Text;
             string pattern = @" \(\d*\)";
             string target = "";
             Regex regex = new Regex(pattern);
             return regex.Replace(nonRegEx, target);
         }
 
-        private int returnQuantityOfTheNode(String nonRegEx)
+        private int returnQuantityOfTheNode(TreeNode node)
         {
+            String nonRegEx = node.Text;
             string pattern = @"\(\d*\)";
             Regex regex = new Regex(pattern);
             Match match = regex.Match(nonRegEx);
@@ -523,12 +608,13 @@ namespace TestApp
             else return 0;                
         }
 
-        private int getParentIdByName(string parentName)
+        private int getParentId(TreeNode node)
         {
             using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
             {
                 connection.Open();
                 int parentId = 0;
+                String parentName = returnNameOfTheNode(node.Parent);
                 String command = "SELECT ID FROM TOPCOMP WHERE NAME = '" + parentName + "'";
                 SqlCommand sqlCommand = new SqlCommand(command, connection);
                 SqlDataReader reader = sqlCommand.ExecuteReader();
@@ -554,25 +640,52 @@ namespace TestApp
             }
         }
 
-        private int getNodeIdByName(string Name)
+        private int getNodeId(TreeNode node)
+        {
+            String componentName = returnNameOfTheNode(node);
+            return getNodeIdByName(componentName);
+        }
+
+        private int getNodeIdByName(String name)
         {
             using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString))
             {
                 connection.Open();
-                String command = "SELECT ID FROM INCOMP WHERE NAME = '" + Name + "'";
+                String command = "SELECT ID FROM INCOMP WHERE NAME = '" + name + "'";
                 SqlCommand sqlCommand = new SqlCommand(command, connection);
                 SqlDataReader reader = sqlCommand.ExecuteReader();
-                reader.Read();
-                int Id = (int)reader.GetValue(0);
+                if (reader.HasRows)
+                {
+                    reader.Read();
+                    int Id = (int)reader.GetValue(0);
+                    reader.Close();
+                    connection.Close();
+                    return Id;
+                }
+                reader.Close();
+
+                command = "SELECT ID FROM TOPCOMP WHERE NAME = '" + name + "'";
+                sqlCommand = new SqlCommand(command, connection);
+                reader = sqlCommand.ExecuteReader();
+                if (reader.HasRows)
+                {
+                    reader.Read();
+                    int Id = (int)reader.GetValue(0);
+                    reader.Close();
+                    connection.Close();
+                    return Id;
+                }
                 reader.Close();
                 connection.Close();
-                return Id;
+
+                return 0;
             }
         }
 
         private TreeNode[] findNodeByName(TreeNodeCollection nodes, String name)
         {
-            return nodes.Cast<TreeNode>().Where(r => r.Text == name).ToArray();
+            TreeNode[] returnnodes = nodes.Cast<TreeNode>().Where(r => returnNameOfTheNode(r) == name).ToArray();
+            return returnnodes;
         }
 
     }

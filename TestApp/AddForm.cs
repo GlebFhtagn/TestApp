@@ -33,21 +33,31 @@ namespace TestApp
 
         private void button2_Click(object sender, EventArgs e)
         {
-            if (    nameCompBox.Text != null &&     quantityCompBox.Text != null &&
-                   (name != nameCompBox.Text ||     quantity != int.Parse(quantityCompBox.Text)) &&  int.Parse(quantityCompBox.Text) != 0)
+            try
             {
-                nameCompBox.ForeColor = Color.Black;
-                quantityCompBox.ForeColor = Color.Red;
-                name = nameCompBox.Text;
-                quantity = int.Parse(quantityCompBox.Text);
-                this.DialogResult = DialogResult.OK;
-                this.Hide();
+                if (nameCompBox.Text != null && quantityCompBox.Text != null &&
+                   (name != nameCompBox.Text || quantity != int.Parse(quantityCompBox.Text)) && int.Parse(quantityCompBox.Text) != 0)
+                {
+                    nameCompBox.ForeColor = Color.Black;
+                    quantityCompBox.ForeColor = Color.Red;
+                    name = nameCompBox.Text;
+                    quantity = int.Parse(quantityCompBox.Text);
+                    this.DialogResult = DialogResult.OK;
+                    this.Hide();
+                }
+                else
+                {
+                    quantityCompBox.ForeColor = Color.Red;
+                    nameCompBox.ForeColor = Color.Red;
+                }
             }
-            else
+            catch(System.FormatException exc)
             {
+
+                label3.Text = "Количество должно быть численным";
                 quantityCompBox.ForeColor = Color.Red;
-                nameCompBox.ForeColor = Color.Red;
             }
+
         }
 
         private void button1_Click(object sender, EventArgs e)
